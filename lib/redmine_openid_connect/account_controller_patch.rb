@@ -88,59 +88,54 @@ module RedmineOpenidConnect
         end
 
         # Check if there's already an existing user
-        user = User.find_by_mail(user_info["email"])
+        login = user_info["user_name"] || user_info["nickname"] || user_info["preferred_username"]
+        user = User.find_by_login(login)
 
         if user.nil?
           user = User.new
+        end
+        new_user = user.new_record?
 
-          user.login = user_info["user_name"] || user_info["nickname"] || user_info["preferred_username"]
+        user.login = login
 
-          firstname = user_info["given_name"]
-          lastname = user_info["family_name"]
+        firstname = user_info["given_name"]
+        lastname = user_info["family_name"]
 
-          if (firstname.nil? || lastname.nil?) && user_info["name"]
-            parts = user_info["name"].split
-            if parts.length >= 2
-              firstname = parts[0]
-              lastname = parts[-1]
-            end
+        if (firstname.nil? || lastname.nil?) && user_info["name"]
+          parts = user_info["name"].split
+          if parts.length >= 2
+            firstname = parts[0]
+            lastname = parts[-1]
           end
+        end
 
-          attributes = {
-            firstname: firstname || "",
-            lastname: lastname || "",
-            mail: user_info["email"],
-            mail_notification: 'only_my_events',
-            last_login_on: Time.now
-          }
+        attributes = {
+          firstname: firstname || "",
+          lastname: lastname || "",
+          mail: user_info["email"],
+          mail_notification: 'only_my_events',
+          last_login_on: Time.now
+        }
 
-          user.assign_attributes attributes
+        user.assign_attributes attributes
 
-          if user.save
-            user.update_attribute(:admin, oic_session.admin?)
-            oic_session.user_id = user.id
-            oic_session.save!
-            # after user creation just show "My Page" don't redirect to remember
-            successful_authentication(user)
-          else
-            flash.now[:warning] ||= l(:oic_cannot_create_user, user.login)
-            user.errors.full_messages.each do |error|
-              logger.warn "Could not create user #{user.login}, error was #{error}"
-              flash.now[:warning] += "#{error}. "
-            end
-            return invalid_credentials
-          end
-        else
-          user.update_attribute(:admin, oic_session.admin?)
+        if user.save
           oic_session.user_id = user.id
           oic_session.save!
-          # redirect back to initial URL
-          if session[:remember_url]
+          if new_user && session[:remember_url]
             params[:back_url] = session[:remember_url]
             session[:remember_url] = nil
           end
+          # after user creation just show "My Page" don't redirect to remember
           successful_authentication(user)
-        end # if user.nil?
+        else
+          flash.now[:warning] ||= l(:oic_cannot_create_user, user.login)
+          user.errors.full_messages.each do |error|
+            logger.warn "Could not create user #{user.login}, error was #{error}"
+            flash.now[:warning] += "#{error}. "
+          end
+          return invalid_credentials
+        end
       end
     end
 
